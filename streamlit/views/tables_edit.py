@@ -44,6 +44,18 @@ def read_table(table_name, conn):
             if 'datetime' in str(df[col].dtype).lower():
                 df[col] = df[col].dt.strftime('%Y-%m-%d')
         
+        # Log the table read operation
+        log_table_operation = st.session_state.get("log_table_operation")
+        if log_table_operation:
+            user_info = st.session_state.get("get_user_info")()
+            user_info.update({
+                "target_table": table_name,
+                "warehouse": http_path,
+                "rows_count": len(df),
+                "status": "success"
+            })
+            log_table_operation("read", table_name, user_info)
+        
         return df
 
 
@@ -59,34 +71,64 @@ def get_table_names(catalog_name, schema_name):
 
 def insert_overwrite_table(table_name: str, df: pd.DataFrame, conn):
     progress = st.empty()
-    with conn.cursor() as cursor:
-        # Convert DataFrame to a list of dictionaries for better control of value formatting
-        rows_dict = df.to_dict('records')
+    try:
+        with conn.cursor() as cursor:
+            # Convert DataFrame to a list of dictionaries for better control of value formatting
+            rows_dict = df.to_dict('records')
+            
+            # Process each row of data
+            formatted_rows = []
+            for row in rows_dict:
+                formatted_row = []
+                for value in row.values():
+                    # Handle NULL values and NaN
+                    if pd.isna(value) or value is None:
+                        formatted_value = "NULL"
+                    # Handle numeric types
+                    elif isinstance(value, (int, float)):
+                        formatted_value = str(value)
+                    # All other types (including dates which are now strings)
+                    else:
+                        formatted_value = f"'{str(value).replace(chr(39), chr(39)+chr(39))}'"
+                    formatted_row.append(formatted_value)
+                formatted_rows.append(f"({','.join(formatted_row)})")
+            
+            # Build SQL statement
+            values = ",".join(formatted_rows)
+            with progress:
+                st.info("Calling Databricks SQL...")
+            cursor.execute(f"INSERT OVERWRITE {table_name} VALUES {values}")
         
-        # Process each row of data
-        formatted_rows = []
-        for row in rows_dict:
-            formatted_row = []
-            for value in row.values():
-                # Handle NULL values and NaN
-                if pd.isna(value) or value is None:
-                    formatted_value = "NULL"
-                # Handle numeric types
-                elif isinstance(value, (int, float)):
-                    formatted_value = str(value)
-                # All other types (including dates which are now strings)
-                else:
-                    formatted_value = f"'{str(value).replace(chr(39), chr(39)+chr(39))}'"
-                formatted_row.append(formatted_value)
-            formatted_rows.append(f"({','.join(formatted_row)})")
+        progress.empty()
+        st.success("Changes saved")
         
-        # Build SQL statement
-        values = ",".join(formatted_rows)
-        with progress:
-            st.info("Calling Databricks SQL...")
-        cursor.execute(f"INSERT OVERWRITE {table_name} VALUES {values}")
-    progress.empty()
-    st.success("Changes saved")
+        # Log successful table edit
+        log_table_operation = st.session_state.get("log_table_operation")
+        if log_table_operation:
+            user_info = st.session_state.get("get_user_info")()
+            user_info.update({
+                "target_table": table_name,
+                "warehouse": http_path,
+                "rows_count": len(df),
+                "status": "success"
+            })
+            log_table_operation("edit", table_name, user_info)
+            
+    except Exception as e:
+        progress.empty()
+        st.error(f"Error saving changes: {str(e)}")
+        
+        # Log failed table edit
+        log_table_operation = st.session_state.get("log_table_operation")
+        if log_table_operation:
+            user_info = st.session_state.get("get_user_info")()
+            user_info.update({
+                "target_table": table_name,
+                "warehouse": http_path,
+                "status": "failed",
+                "error": str(e)
+            })
+            log_table_operation("edit_failed", table_name, user_info)
 
 
 tab_a, tab_b, tab_c = st.tabs(["**Try it**", "**Code snippet**", "**Requirements**"])

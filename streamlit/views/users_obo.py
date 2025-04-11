@@ -37,11 +37,26 @@ def get_connection_service_principal(http_path):
     )
 
 
-def read_table(table_name, conn):
+def read_table(table_name, conn, auth_type="OBO"):
     with conn.cursor() as cursor:
         query = f"SELECT * FROM {table_name} LIMIT 10"
         cursor.execute(query)
-        return cursor.fetchall_arrow().to_pandas()
+        df = cursor.fetchall_arrow().to_pandas()
+        
+        # Log the table read operation
+        log_table_operation = st.session_state.get("log_table_operation")
+        if log_table_operation:
+            user_info = st.session_state.get("get_user_info")()
+            user_info.update({
+                "target_table": table_name,
+                "warehouse": http_path,
+                "rows_count": len(df),
+                "status": "success",
+                "auth_type": auth_type
+            })
+            log_table_operation(f"[{auth_type}] read", table_name, user_info)
+        
+        return df
 
 
 def get_schema_names(catalog_name):
@@ -142,6 +157,17 @@ with tab_app:
                 if auth_mode == "On-behalf-of-user (OBO)":
                     if not user_token:
                         st.error("User token is required for OBO authentication")
+                        log_table_operation = st.session_state.get("log_table_operation")
+                        if log_table_operation:
+                            user_info = st.session_state.get("get_user_info")()
+                            user_info.update({
+                                "target_table": full_table_name,
+                                "warehouse": http_path,
+                                "status": "failed",
+                                "error": "Missing user token",
+                                "auth_type": "OBO"
+                            })
+                            log_table_operation("[OBO] read_failed", full_table_name, user_info)
                     else:
                         conn = get_connection_obo(http_path, user_token)
                         st.success("Connected using OBO authentication")
@@ -151,13 +177,37 @@ with tab_app:
 
             if conn:
                 with st.spinner(f"Querying {full_table_name}..."):
-                    df = read_table(full_table_name, conn)
+                    auth_type = "OBO" if auth_mode == "On-behalf-of-user (OBO)" else "APP"
+                    df = read_table(full_table_name, conn, auth_type=auth_type)
                     if df is not None:
                         st.dataframe(df)
                     else:
                         st.error("No data returned")
+                        log_table_operation = st.session_state.get("log_table_operation")
+                        if log_table_operation:
+                            user_info = st.session_state.get("get_user_info")()
+                            user_info.update({
+                                "target_table": full_table_name,
+                                "warehouse": http_path,
+                                "status": "failed",
+                                "error": "No data returned",
+                                "auth_type": auth_type
+                            })
+                            log_table_operation(f"[{auth_type}] read_failed", full_table_name, user_info)
         except Exception as e:
             st.error(f"Error: {str(e)}")
+            log_table_operation = st.session_state.get("log_table_operation")
+            if log_table_operation:
+                user_info = st.session_state.get("get_user_info")()
+                auth_type = "OBO" if auth_mode == "On-behalf-of-user (OBO)" else "APP"
+                user_info.update({
+                    "target_table": full_table_name,
+                    "warehouse": http_path,
+                    "status": "failed",
+                    "error": str(e),
+                    "auth_type": auth_type
+                })
+                log_table_operation(f"[{auth_type}] read_failed", full_table_name, user_info)
             st.info(
                 "If using OBO, verify the user token has necessary permissions for this resource"
             )
