@@ -2,6 +2,8 @@ import streamlit as st
 from databricks import sql
 from databricks.sdk.core import Config
 from databricks.sdk import WorkspaceClient
+import datetime
+import json
 
 st.header(body="Tables", divider=True)
 st.subheader("Read a table")
@@ -76,45 +78,50 @@ with tab_a:
                         try:
                             user_info = st.session_state["get_user_info"]()
                         except Exception as e:
-                            st.warning(f"Failed to get user info: {str(e)}", icon="⚠️")
-                    
-                    # Create additional log details
-                    log_details = {
-                        "target_table": full_table_name,
-                        "warehouse": http_path_input,
-                        "status": "pending"
-                    }
+                            print(f"Error getting user info: {str(e)}")
+                            user_info = {
+                                "username": "unknown",
+                                "email": "unknown",
+                                "ip_address": "unknown"
+                            }
                     
                     # Try to read the table
                     try:
                         http_path = warehouse_paths[http_path_input]
                         conn = get_connection(http_path)
                         
-                        # Log the attempt before execution
-                        if "log_table_operation" in st.session_state:
-                            log_details["status"] = "attempting"
-                            st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
-                        
                         # Execute the query
+                        start_time = datetime.datetime.now()
                         df = read_table(full_table_name, conn)
                         
-                        # Log successful read
+                        # Create log entry for successful read
                         if "log_table_operation" in st.session_state:
-                            log_details["status"] = "success"
-                            log_details["rows_count"] = len(df)
-                            st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                            log_data = user_info.copy() if user_info else {}
+                            log_data.update({
+                                "target_table": full_table_name,
+                                "warehouse": http_path_input,
+                                "status": "success",
+                                "rows_count": len(df),
+                                "query_time": start_time.isoformat()
+                            })
+                            st.session_state["log_table_operation"]("read", full_table_name, log_data)
                         
                         # Display success and data
                         st.success(f"Successfully read {len(df)} rows")
                         st.dataframe(df)
                     
                     except Exception as e:
-                        # Log failed read
+                        # Create log entry for failed read
                         if "log_table_operation" in st.session_state:
-                            log_details["status"] = "failed"
-                            log_details["error"] = str(e)
-                            log_details["error_type"] = type(e).__name__
-                            st.session_state["log_table_operation"]("read_failed", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                            log_data = user_info.copy() if user_info else {}
+                            log_data.update({
+                                "target_table": full_table_name,
+                                "warehouse": http_path_input,
+                                "status": "failed",
+                                "error": str(e),
+                                "query_time": datetime.datetime.now().isoformat()
+                            })
+                            st.session_state["log_table_operation"]("read_failed", full_table_name, log_data)
                         
                         # Display error to user
                         error_msg = str(e)
@@ -187,45 +194,50 @@ with tab_b:
                             try:
                                 user_info = st.session_state["get_user_info"]()
                             except Exception as e:
-                                st.warning(f"Failed to get user info: {str(e)}", icon="⚠️")
-                        
-                        # Create additional log details
-                        log_details = {
-                            "target_table": full_table_name,
-                            "warehouse": http_path_input,
-                            "status": "pending"
-                        }
+                                print(f"Error getting user info: {str(e)}")
+                                user_info = {
+                                    "username": "unknown",
+                                    "email": "unknown",
+                                    "ip_address": "unknown"
+                                }
                         
                         # Try to read the table
                         try:
                             http_path = warehouse_paths[http_path_input]
                             conn = get_connection(http_path)
                             
-                            # Log the attempt before execution
-                            if "log_table_operation" in st.session_state:
-                                log_details["status"] = "attempting"
-                                st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
-                            
                             # Execute the query
+                            start_time = datetime.datetime.now()
                             df = read_table(full_table_name, conn)
                             
-                            # Log successful read
+                            # Create log entry for successful read
                             if "log_table_operation" in st.session_state:
-                                log_details["status"] = "success"
-                                log_details["rows_count"] = len(df)
-                                st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                                log_data = user_info.copy() if user_info else {}
+                                log_data.update({
+                                    "target_table": full_table_name,
+                                    "warehouse": http_path_input,
+                                    "status": "success",
+                                    "rows_count": len(df),
+                                    "query_time": start_time.isoformat()
+                                })
+                                st.session_state["log_table_operation"]("read", full_table_name, log_data)
                             
                             # Display success and data
                             st.success(f"Successfully read {len(df)} rows")
                             st.dataframe(df)
                         
                         except Exception as e:
-                            # Log failed read
+                            # Create log entry for failed read
                             if "log_table_operation" in st.session_state:
-                                log_details["status"] = "failed"
-                                log_details["error"] = str(e)
-                                log_details["error_type"] = type(e).__name__
-                                st.session_state["log_table_operation"]("read_failed", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                                log_data = user_info.copy() if user_info else {}
+                                log_data.update({
+                                    "target_table": full_table_name,
+                                    "warehouse": http_path_input,
+                                    "status": "failed",
+                                    "error": str(e),
+                                    "query_time": datetime.datetime.now().isoformat()
+                                })
+                                st.session_state["log_table_operation"]("read_failed", full_table_name, log_data)
                             
                             # Display error to user
                             error_msg = str(e)
