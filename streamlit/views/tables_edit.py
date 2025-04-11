@@ -37,7 +37,14 @@ def read_table(table_name, conn):
     with conn.cursor() as cursor:
         query = f"SELECT * FROM {table_name}"
         cursor.execute(query)
-        return cursor.fetchall_arrow().to_pandas()
+        df = cursor.fetchall_arrow().to_pandas()
+        
+        # Convert date columns to string format to avoid SQL issues
+        for col in df.columns:
+            if 'datetime' in str(df[col].dtype).lower():
+                df[col] = df[col].dt.strftime('%Y-%m-%d')
+        
+        return df
 
 
 def get_schema_names(catalog_name):
@@ -53,8 +60,28 @@ def get_table_names(catalog_name, schema_name):
 def insert_overwrite_table(table_name: str, df: pd.DataFrame, conn):
     progress = st.empty()
     with conn.cursor() as cursor:
-        rows = list(df.itertuples(index=False))
-        values = ",".join([f"({','.join(map(repr, row))})" for row in rows])
+        # Convert DataFrame to a list of dictionaries for better control of value formatting
+        rows_dict = df.to_dict('records')
+        
+        # Process each row of data
+        formatted_rows = []
+        for row in rows_dict:
+            formatted_row = []
+            for value in row.values():
+                # Handle NULL values and NaN
+                if pd.isna(value) or value is None:
+                    formatted_value = "NULL"
+                # Handle numeric types
+                elif isinstance(value, (int, float)):
+                    formatted_value = str(value)
+                # All other types (including dates which are now strings)
+                else:
+                    formatted_value = f"'{str(value).replace(chr(39), chr(39)+chr(39))}'"
+                formatted_row.append(formatted_value)
+            formatted_rows.append(f"({','.join(formatted_row)})")
+        
+        # Build SQL statement
+        values = ",".join(formatted_rows)
         with progress:
             st.info("Calling Databricks SQL...")
         cursor.execute(f"INSERT OVERWRITE {table_name} VALUES {values}")
@@ -131,8 +158,28 @@ with tab_b:
         def insert_overwrite_table(table_name: str, df: pd.DataFrame, conn):
             progress = st.empty()
             with conn.cursor() as cursor:
-                rows = list(df.itertuples(index=False))
-                values = ",".join([f"({','.join(map(repr, row))})" for row in rows])
+                # Convert DataFrame to a list of dictionaries for better control of value formatting
+                rows_dict = df.to_dict('records')
+                
+                # Process each row of data
+                formatted_rows = []
+                for row in rows_dict:
+                    formatted_row = []
+                    for value in row.values():
+                        # Handle NULL values and NaN
+                        if pd.isna(value) or value is None:
+                            formatted_value = "NULL"
+                        # Handle numeric types
+                        elif isinstance(value, (int, float)):
+                            formatted_value = str(value)
+                        # All other types (including dates which are now strings)
+                        else:
+                            formatted_value = f"'{str(value).replace(chr(39), chr(39)+chr(39))}'"
+                        formatted_row.append(formatted_value)
+                    formatted_rows.append(f"({','.join(formatted_row)})")
+                
+                # Build SQL statement
+                values = ",".join(formatted_rows)
                 with progress:
                     st.info("Calling Databricks SQL...")
                 cursor.execute(f"INSERT OVERWRITE {table_name} VALUES {values}")
