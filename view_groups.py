@@ -105,4 +105,28 @@ groups = [
             },
         ],
     },
+    {
+        "title": "Demo",
+        "views": [            
+            {
+                "label": "Table Read - New SDK",
+                "help": "Demo of reading Unity Catalog tables with dropdown selection.",
+                "page": "views/demo_table_read.py",
+                "icon": ":material/table_view:",
+            },
+            {
+                "label": "Table Edit - New SDK",
+                "help": "Demo of editing Unity Catalog tables with dropdown selection.",
+                "page": "views/demo_table_edit.py",
+                "icon": ":material/edit_document:",
+            },
+            {
+                "label": "Genie",
+                "help": "Demo of Genie AI assistant.",
+                "page": "views/demo_genie.py",
+                "icon": ":material/auto_fix:",
+            }
+
+        ],
+    },
 ]
