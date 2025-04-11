@@ -66,10 +66,62 @@ with tab_a:
         table_name = st.selectbox("Select a table:", [""] + table_names)
 
         if http_path_input and table_name and table_name != "":
-            http_path = warehouse_paths[http_path_input]
-            conn = get_connection(http_path)
-            df = read_table(f"{catalog_name}.{schema_name}.{table_name}", conn)
-            st.dataframe(df)
+            full_table_name = f"{catalog_name}.{schema_name}.{table_name}"
+            
+            if st.button("Read Data"):
+                with st.spinner(f"Reading data from {full_table_name}..."):
+                    # Get user information for logging
+                    user_info = None
+                    if "get_user_info" in st.session_state:
+                        try:
+                            user_info = st.session_state["get_user_info"]()
+                        except Exception as e:
+                            st.warning(f"Failed to get user info: {str(e)}", icon="⚠️")
+                    
+                    # Create additional log details
+                    log_details = {
+                        "target_table": full_table_name,
+                        "warehouse": http_path_input,
+                        "status": "pending"
+                    }
+                    
+                    # Try to read the table
+                    try:
+                        http_path = warehouse_paths[http_path_input]
+                        conn = get_connection(http_path)
+                        
+                        # Log the attempt before execution
+                        if "log_table_operation" in st.session_state:
+                            log_details["status"] = "attempting"
+                            st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                        
+                        # Execute the query
+                        df = read_table(full_table_name, conn)
+                        
+                        # Log successful read
+                        if "log_table_operation" in st.session_state:
+                            log_details["status"] = "success"
+                            log_details["rows_count"] = len(df)
+                            st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                        
+                        # Display success and data
+                        st.success(f"Successfully read {len(df)} rows")
+                        st.dataframe(df)
+                    
+                    except Exception as e:
+                        # Log failed read
+                        if "log_table_operation" in st.session_state:
+                            log_details["status"] = "failed"
+                            log_details["error"] = str(e)
+                            log_details["error_type"] = type(e).__name__
+                            st.session_state["log_table_operation"]("read_failed", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                        
+                        # Display error to user
+                        error_msg = str(e)
+                        if "403" in error_msg and "FORBIDDEN" in error_msg:
+                            st.error(f"Access denied: You don't have permission to read table {full_table_name}. Please check your credentials or request access.", icon="🔒")
+                        else:
+                            st.error(f"Failed to read table: {error_msg}", icon="❌")
 
 
 with tab_b:
@@ -78,9 +130,18 @@ with tab_b:
         import streamlit as st
         from databricks import sql
         from databricks.sdk.core import Config
+        from databricks.sdk import WorkspaceClient
 
 
         cfg = Config()  # Set the DATABRICKS_HOST environment variable when running locally
+        
+        # Initialize workspace client
+        w = WorkspaceClient()
+        
+        # Get warehouses and catalogs
+        warehouses = w.warehouses.list()
+        warehouse_paths = {wh.name: wh.odbc_params.path for wh in warehouses}
+        catalogs = w.catalogs.list()
 
 
         @st.cache_resource # connection is cached
@@ -96,19 +157,82 @@ with tab_b:
                 query = f"SELECT * FROM {table_name}"
                 cursor.execute(query)
                 return cursor.fetchall_arrow().to_pandas()
-
-        http_path_input = st.text_input(
-            "Enter your Databricks HTTP Path:", placeholder="/sql/1.0/warehouses/xxxxxx"
+                
+        # Instead of text inputs, use dropdowns to select resources
+        http_path_input = st.selectbox(
+            "Select a SQL warehouse:", [""] + list(warehouse_paths.keys())
         )
 
-        table_name = st.text_input(
-            "Specify a Unity Catalog table name:", placeholder="catalog.schema.table"
+        catalog_name = st.selectbox(
+            "Select a catalog:", [""] + [catalog.name for catalog in catalogs]
         )
 
-        if http_path_input and table_name:
-            conn = get_connection(http_path_input)
-            df = read_table(table_name, conn)
-            st.dataframe(df)
+        if catalog_name and catalog_name != "":
+            schemas = w.schemas.list(catalog_name=catalog_name)
+            schema_name = st.selectbox("Select a schema:", [""] + [schema.name for schema in schemas])
+
+        if catalog_name and catalog_name != "" and schema_name and schema_name != "":
+            tables = w.tables.list(catalog_name=catalog_name, schema_name=schema_name)
+            table_name = st.selectbox("Select a table:", [""] + [table.name for table in tables])
+
+            if http_path_input and table_name and table_name != "":
+                full_table_name = f"{catalog_name}.{schema_name}.{table_name}"
+                
+                # Add Read button - data is only fetched when the button is clicked
+                if st.button("Read Data"):
+                    with st.spinner(f"Reading data from {full_table_name}..."):
+                        # Get user information for logging
+                        user_info = None
+                        if "get_user_info" in st.session_state:
+                            try:
+                                user_info = st.session_state["get_user_info"]()
+                            except Exception as e:
+                                st.warning(f"Failed to get user info: {str(e)}", icon="⚠️")
+                        
+                        # Create additional log details
+                        log_details = {
+                            "target_table": full_table_name,
+                            "warehouse": http_path_input,
+                            "status": "pending"
+                        }
+                        
+                        # Try to read the table
+                        try:
+                            http_path = warehouse_paths[http_path_input]
+                            conn = get_connection(http_path)
+                            
+                            # Log the attempt before execution
+                            if "log_table_operation" in st.session_state:
+                                log_details["status"] = "attempting"
+                                st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                            
+                            # Execute the query
+                            df = read_table(full_table_name, conn)
+                            
+                            # Log successful read
+                            if "log_table_operation" in st.session_state:
+                                log_details["status"] = "success"
+                                log_details["rows_count"] = len(df)
+                                st.session_state["log_table_operation"]("read", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                            
+                            # Display success and data
+                            st.success(f"Successfully read {len(df)} rows")
+                            st.dataframe(df)
+                        
+                        except Exception as e:
+                            # Log failed read
+                            if "log_table_operation" in st.session_state:
+                                log_details["status"] = "failed"
+                                log_details["error"] = str(e)
+                                log_details["error_type"] = type(e).__name__
+                                st.session_state["log_table_operation"]("read_failed", full_table_name, {**user_info, **log_details} if user_info else log_details)
+                            
+                            # Display error to user
+                            error_msg = str(e)
+                            if "403" in error_msg and "FORBIDDEN" in error_msg:
+                                st.error(f"Access denied: You don't have permission to read table {full_table_name}. Please check your credentials or request access.", icon="🔒")
+                            else:
+                                st.error(f"Failed to read table: {error_msg}", icon="❌")
         """
     )
 
