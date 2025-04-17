@@ -126,7 +126,7 @@ with tab_a:
                         # Display error to user
                         error_msg = str(e)
                         if "403" in error_msg and "FORBIDDEN" in error_msg:
-                            st.error(f"Access denied: You don't have permission to read table {full_table_name}. Please check your credentials or request access.", icon="🔒")
+                            st.error(f"Access denied:{error_msg}", icon="🔒")
                         else:
                             st.error(f"Failed to read table: {error_msg}", icon="❌")
 
@@ -242,7 +242,7 @@ with tab_b:
                             # Display error to user
                             error_msg = str(e)
                             if "403" in error_msg and "FORBIDDEN" in error_msg:
-                                st.error(f"Access denied: You don't have permission to read table {full_table_name}. Please check your credentials or request access.", icon="🔒")
+                                st.error(f"Access denied:{error_msg}", icon="🔒")
                             else:
                                 st.error(f"Failed to read table: {error_msg}", icon="❌")
         """
